@@ -107,11 +107,46 @@
     white-space: nowrap;
   }
 
+  .plates {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
   .plate {
     position: relative;
-    display: inline-block;
-    margin-bottom: 28px;
+    min-height: 48px;
+    border-radius: 3px;
+    background: var(--ink);
     color: var(--plate-text);
+  }
+  .plate:has(select:focus-visible), .swap:focus-visible {
+    outline: 3px solid var(--needle);
+    outline-offset: 2px;
+  }
+  .plate-face {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 40px 0 14px;
+    font-family: var(--latin);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .swap {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    cursor: pointer;
+    touch-action: manipulation;
   }
   .plate::after {
     content: "";
@@ -127,18 +162,14 @@
     pointer-events: none;
   }
   select {
-    appearance: none;
-    -webkit-appearance: none;
-    min-height: 48px;
-    padding: 0 48px 0 16px;
+    /* 閉じた状態は .plate-face に単位だけを見せ、一覧には名称つきの選択肢を出す */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
     border: 0;
-    border-radius: 3px;
-    background: var(--ink);
-    color: var(--plate-text);
-    font-family: var(--latin);
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-size: 1rem;
     cursor: pointer;
   }
   select option, select optgroup {
@@ -146,10 +177,6 @@
     color: var(--plate-text);
     font-family: var(--japanese);
     font-size: 1rem;
-  }
-  select:focus-visible {
-    outline: 3px solid var(--needle);
-    outline-offset: 2px;
   }
 
   .hint {
@@ -229,6 +256,7 @@
     font-size: 0.9375rem;
     max-width: 60ch;
   }
+  .rule-note a { color: inherit; }
 
   @media (max-width: 720px) {
     h1 {
@@ -240,7 +268,7 @@
       letter-spacing: 0.2em;
       writing-mode: horizontal-tb;
     }
-    .plate { margin-bottom: 20px; }
+    .plates { margin-bottom: 20px; }
     .tape { height: 116px; }
   }
 </style>
@@ -252,22 +280,20 @@
   <div class="upper">
     <h1>単位変換</h1>
 
-    <div class="plate">
-      <label class="visually-hidden" for="type">変換タイプ</label>
-      <select id="type">
-        <optgroup label="重さ">
-          <option value="kg-lb">kg → lb</option>
-          <option value="lb-kg">lb → kg</option>
-        </optgroup>
-        <optgroup label="長さ">
-          <option value="cm-inch">cm → inch</option>
-          <option value="inch-cm">inch → cm</option>
-        </optgroup>
-        <optgroup label="温度">
-          <option value="c-f">℃ → ℉</option>
-          <option value="f-c">℉ → ℃</option>
-        </optgroup>
-      </select>
+    <div class="plates">
+      <div class="plate">
+        <label class="visually-hidden" for="from">変換元の単位</label>
+        <span class="plate-face" id="from-face" aria-hidden="true"></span>
+        <select id="from"></select>
+      </div>
+      <button class="swap" id="swap" type="button" aria-label="変換元と変換先を入れ替える">
+        <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M3 9h19M17 4l5 5-5 5M23 17H4M9 12l-5 5 5 5"/></svg>
+      </button>
+      <div class="plate">
+        <label class="visually-hidden" for="to">変換先の単位</label>
+        <span class="plate-face" id="to-face" aria-hidden="true"></span>
+        <select id="to"></select>
+      </div>
     </div>
 
     <label class="hint" for="value">数値を入力</label>
@@ -284,11 +310,11 @@
   <canvas class="tape" id="tape" aria-hidden="true"></canvas>
 
   <div class="lower">
-    <output class="number" id="result-line" for="type value" aria-label="変換結果">
+    <output class="number" id="result-line" for="from to value" aria-label="変換結果">
       <span id="result">—</span>
       <span class="unit" id="to-unit"></span>
     </output>
-    <p class="rule-note" id="note"></p>
+    <p class="rule-note"><span id="note"></span> <a id="credit" href="https://www.exchangerate-api.com" hidden>Rates By Exchange Rate API</a></p>
   </div>
 </main>
 
@@ -299,16 +325,54 @@
   const LB_RULE = "1 lb = 0.45359237 kg";
   const INCH_RULE = "1 inch = 2.54 cm";
 
-  const CONVERSIONS = {
-    "kg-lb":   { from: "kg",   to: "lb",   min: 0,       note: LB_RULE,   convert: (x) => x / KG_PER_LB },
-    "lb-kg":   { from: "lb",   to: "kg",   min: 0,       note: LB_RULE,   convert: (x) => x * KG_PER_LB },
-    "cm-inch": { from: "cm",   to: "inch", min: 0,       note: INCH_RULE, convert: (x) => x / CM_PER_INCH },
-    "inch-cm": { from: "inch", to: "cm",   min: 0,       note: INCH_RULE, convert: (x) => x * CM_PER_INCH },
-    "c-f":     { from: "℃",   to: "℉",   min: -273.15, note: "℉ = ℃ × 9 ÷ 5 + 32",   convert: (x) => x * 9 / 5 + 32 },
-    "f-c":     { from: "℉",   to: "℃",   min: -459.67, note: "℃ = (℉ − 32) × 5 ÷ 9", convert: (x) => (x - 32) * 5 / 9 },
-  };
+  const CURRENCY = "通貨";
+  const RATES_URL = "https://open.er-api.com/v6/latest/USD";
+  const RATES_KEY = "converter.rates.v1";
+  const PAIR_KEY = "converter.pair.v1";
 
-  const typeEl = document.getElementById("type");
+  // localStorage が使えない環境でも変換は動かす
+  function load(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }
+
+  let rates = load(RATES_KEY); // { values: {通貨: 1米ドルあたりの額}, updated, next }（UNIX秒）
+  let ratesState = "idle";     // idle | loading | failed
+
+  // toBase / fromBase は各グループの基準単位（kg・cm・℃・米ドル）との換算
+  const linear = (perUnit) => ({ toBase: (x) => x * perUnit, fromBase: (x) => x / perUnit });
+  const money = (code) => ({
+    label: code,
+    toBase: (x) => x / rates.values[code],
+    fromBase: (x) => x * rates.values[code],
+  });
+
+  const UNITS = {
+    kg:   { group: "重さ", name: "キログラム", label: "kg",   rule: LB_RULE,   ...linear(1) },
+    lb:   { group: "重さ", name: "ポンド",     label: "lb",   rule: LB_RULE,   ...linear(KG_PER_LB) },
+    cm:   { group: "長さ", name: "センチ",     label: "cm",   rule: INCH_RULE, ...linear(1) },
+    inch: { group: "長さ", name: "インチ",     label: "inch", rule: INCH_RULE, ...linear(CM_PER_INCH) },
+    c:    { group: "温度", name: "摂氏", label: "℃", min: -273.15, rule: "℃ = (℉ − 32) × 5 ÷ 9",
+            toBase: (x) => x, fromBase: (x) => x },
+    f:    { group: "温度", name: "華氏", label: "℉", min: -459.67, rule: "℉ = ℃ × 9 ÷ 5 + 32",
+            toBase: (x) => (x - 32) * 5 / 9, fromBase: (x) => x * 9 / 5 + 32 },
+    VND:  { group: CURRENCY, name: "ベトナムドン", ...money("VND") },
+    JPY:  { group: CURRENCY, name: "日本円",       ...money("JPY") },
+    USD:  { group: CURRENCY, name: "米ドル",       ...money("USD") },
+    CNY:  { group: CURRENCY, name: "人民元",       ...money("CNY") },
+    TWD:  { group: CURRENCY, name: "台湾ドル",     ...money("TWD") },
+    KRW:  { group: CURRENCY, name: "韓国ウォン",   ...money("KRW") },
+  };
+  const unitsIn = (group) => Object.keys(UNITS).filter((id) => UNITS[id].group === group);
+  const GROUPS = [...new Set(Object.values(UNITS).map((unit) => unit.group))];
+
+  const fromEl = document.getElementById("from");
+  const toEl = document.getElementById("to");
+  const fromFaceEl = document.getElementById("from-face");
+  const toFaceEl = document.getElementById("to-face");
+  const creditEl = document.getElementById("credit");
   const valueEl = document.getElementById("value");
   const mirrorEl = document.getElementById("mirror");
   const inputLineEl = document.getElementById("input-line");
@@ -474,7 +538,13 @@
       animate();
     }
 
-    return { moveTo, hold };
+    // レート未取得の間は目盛りを出さない
+    function clear() {
+      conversion = null;
+      draw();
+    }
+
+    return { moveTo, hold, clear };
   })();
 
   // ---- 変換 ----
@@ -495,6 +565,37 @@
     return x.toLocaleString("ja-JP", options);
   }
 
+  // 通貨は実用的な桁に丸める。100以上の円・ウォン・ドンは小数を出さない
+  function formatMoney(x, code) {
+    const abs = Math.abs(x);
+    if (abs !== 0 && abs < 1) return x.toLocaleString("ja-JP", { maximumSignificantDigits: 3 });
+    const noDecimals = abs >= 100 && ["VND", "JPY", "KRW"].includes(code);
+    return x.toLocaleString("ja-JP", { maximumFractionDigits: noDecimals ? 0 : 2 });
+  }
+
+  function ratesNote(fromId, toId) {
+    const perOne = UNITS[toId].fromBase(UNITS[fromId].toBase(1));
+    const when = new Date(rates.updated * 1000).toLocaleString("ja-JP", {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    const pair = `1 ${fromId} = ${perOne.toLocaleString("ja-JP", { maximumSignificantDigits: 6 })} ${toId}`;
+    const stale = ratesState === "failed" ? "・最新のレートを取得できませんでした" : "";
+    return `${pair}（${when}時点${stale}）`;
+  }
+
+  function makeConversion(fromId, toId) {
+    const from = UNITS[fromId], to = UNITS[toId];
+    const isMoney = from.group === CURRENCY;
+    return {
+      from: from.label,
+      to: to.label,
+      min: from.min ?? 0,
+      note: isMoney ? ratesNote(fromId, toId) : from.group === "温度" ? to.rule : from.rule,
+      convert: (x) => to.fromBase(from.toBase(x)),
+      format: isMoney ? (x) => formatMoney(x, toId) : format,
+    };
+  }
+
   function showResult(text, unit, error) {
     resultEl.textContent = text;
     toUnitEl.textContent = unit;
@@ -505,13 +606,26 @@
   }
 
   function update() {
-    const conversion = CONVERSIONS[typeEl.value];
+    const from = UNITS[fromEl.value];
+    const isMoney = from.group === CURRENCY;
+    fromUnitEl.textContent = from.label;
+    fromFaceEl.textContent = from.label;
+    toFaceEl.textContent = UNITS[toEl.value].label;
+    creditEl.hidden = !isMoney;
     // iPhone のテンキーにはマイナスがないため、負の値を入れる温度だけ通常キーボードにする
-    valueEl.inputMode = conversion.min < 0 ? "text" : "decimal";
-    fromUnitEl.textContent = conversion.from;
-    noteEl.textContent = conversion.note;
+    valueEl.inputMode = (from.min ?? 0) < 0 ? "text" : "decimal";
     mirrorEl.textContent = valueEl.value || "0";
-    inputLineEl.style.setProperty("--chars", (valueEl.value.length || 1) + conversion.from.length * 0.4);
+    inputLineEl.style.setProperty("--chars", (valueEl.value.length || 1) + from.label.length * 0.4);
+
+    if (isMoney && !rates) {
+      tape.clear();
+      noteEl.textContent = ratesState === "loading" ? "為替レートを取得中です" : "";
+      return showResult("—", "", ratesState === "failed"
+        ? "為替レートを取得できませんでした。通信環境を確認してください" : "");
+    }
+
+    const conversion = makeConversion(fromEl.value, toEl.value);
+    noteEl.textContent = conversion.note;
 
     const text = normalize(valueEl.value);
     if (text === "") {
@@ -538,12 +652,81 @@
     }
 
     tape.moveTo(conversion, x);
-    showResult(format(conversion.convert(x)), conversion.to, "");
+    showResult(conversion.format(conversion.convert(x)), conversion.to, "");
   }
 
-  typeEl.addEventListener("change", update);
+  // ---- 単位の選択 ----
+  function option(id) {
+    return new Option(`${UNITS[id].label}　${UNITS[id].name}`, id);
+  }
+
+  for (const group of GROUPS) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group;
+    optgroup.append(...unitsIn(group).map(option));
+    fromEl.append(optgroup);
+  }
+
+  let currentFrom = "kg";
+  let currentTo = "lb";
+
+  function applyPair(fromId, toId) {
+    currentFrom = fromId;
+    currentTo = toId;
+    fromEl.value = fromId;
+    toEl.replaceChildren(...unitsIn(UNITS[fromId].group).map(option));
+    toEl.value = toId;
+    save(PAIR_KEY, { from: fromId, to: toId });
+    update();
+  }
+
+  fromEl.addEventListener("change", () => {
+    const next = fromEl.value;
+    if (UNITS[next].group !== UNITS[currentTo].group) {
+      applyPair(next, unitsIn(UNITS[next].group).find((id) => id !== next));
+    } else {
+      applyPair(next, next === currentTo ? currentFrom : currentTo);
+    }
+  });
+  toEl.addEventListener("change", () => {
+    const next = toEl.value;
+    applyPair(next === currentFrom ? currentTo : currentFrom, next);
+  });
+  document.getElementById("swap").addEventListener("click", () => applyPair(currentTo, currentFrom));
   valueEl.addEventListener("input", update);
-  update();
+
+  // ---- 為替レートの取得 ----
+  // 無料データの更新は1日1回。次回更新の時刻を過ぎるまでは保存済みのレートを使う
+  async function refreshRates() {
+    if (ratesState === "loading" || (rates && Date.now() / 1000 < rates.next)) return;
+    ratesState = "loading";
+    update();
+    try {
+      const response = await fetch(RATES_URL);
+      const data = await response.json();
+      const complete = unitsIn(CURRENCY).every((code) => data.rates?.[code] > 0);
+      if (data.result !== "success" || !complete) throw new Error("invalid rates");
+      rates = { values: data.rates, updated: data.time_last_update_unix, next: data.time_next_update_unix };
+      save(RATES_KEY, rates);
+      ratesState = "idle";
+    } catch {
+      ratesState = "failed";
+    }
+    update();
+  }
+
+  // 前回の組み合わせで開く
+  const savedPair = load(PAIR_KEY);
+  const validPair = savedPair && UNITS[savedPair.from] && UNITS[savedPair.to]
+    && savedPair.from !== savedPair.to
+    && UNITS[savedPair.from].group === UNITS[savedPair.to].group;
+  applyPair(validPair ? savedPair.from : "kg", validPair ? savedPair.to : "lb");
+
+  refreshRates();
+  // ホーム画面のアプリは開いたままになりやすいので、戻ってきた時にも確認する
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshRates();
+  });
 </script>
 </body>
 </html>
