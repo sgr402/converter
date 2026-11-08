@@ -275,7 +275,10 @@
   /* タッチ端末は標準キーボードの代わりにページ内のテンキーで入力する */
   .keypad { display: none; }
   @media (pointer: coarse) {
-    .sizer input { pointer-events: none; }
+    /* 入力欄が画面にあると iPhone が✓の行を出すため、タッチ端末では表示用の文字だけにする */
+    .sizer input { display: none; }
+    .sizer span { visibility: visible; }
+    .sizer:has(input:placeholder-shown) span { color: var(--hairline); }
     .keypad {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -783,7 +786,11 @@
     return /^-?0$/.test(value) ? value.slice(0, -1) + key : value + key;
   }
 
-  if (window.matchMedia("(pointer: coarse)").matches) valueEl.readOnly = true; // 標準キーボードを出さない
+  if (window.matchMedia("(pointer: coarse)").matches) {
+    mirrorEl.removeAttribute("aria-hidden"); // タッチ端末では表示用の文字が入力値そのものになる
+    // 単位の選択を開いたままにすると✓の行が残るので、選んだ時点で閉じる
+    for (const select of [fromEl, toEl]) select.addEventListener("change", () => select.blur());
+  }
   document.getElementById("keypad").addEventListener("click", (event) => {
     const key = event.target.closest("[data-key]")?.dataset.key;
     if (!key) return;
