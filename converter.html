@@ -271,6 +271,60 @@
     .plates { margin-bottom: 20px; }
     .tape { height: 116px; }
   }
+
+  /* タッチ端末は標準キーボードの代わりにページ内のテンキーで入力する */
+  .keypad { display: none; }
+  @media (pointer: coarse) {
+    .sizer input { pointer-events: none; }
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, minmax(44px, 1fr));
+      gap: 6px;
+      align-self: end;
+      width: 100%;
+      max-width: calc(var(--rule-x) + 520px);
+      height: 100%;
+      max-height: 340px;
+      padding: 0 16px 12px calc(var(--rule-x) + 20px);
+    }
+    .key {
+      padding: 0;
+      border: 1px solid var(--hairline);
+      border-radius: 3px;
+      background: none;
+      color: var(--ink);
+      font-family: var(--latin);
+      font-size: 1.75rem;
+      font-weight: 600;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .key:active { background: var(--hairline); }
+    .key:disabled { visibility: hidden; }
+    .key-action { border-color: var(--ink); background: var(--ink); color: var(--plate-text); }
+    .key-action:active { opacity: 0.75; background: var(--ink); }
+    .key-back { grid-column: 4; grid-row: 1 / 3; }
+  }
+  @media (pointer: coarse) and (orientation: portrait) {
+    :root { --display: clamp(56px, 10dvh, 84px); }
+    main { grid-template-rows: auto auto auto minmax(200px, 1fr); }
+    h1, .hint {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .upper { padding-top: 12px; padding-bottom: 2px; }
+    .lower { padding-top: 6px; padding-bottom: 8px; }
+    .plates { margin-bottom: 8px; }
+    .error { min-height: 1.4em; margin-top: 2px; font-size: 0.8125rem; line-height: 1.4; }
+    .tape { height: clamp(92px, 13dvh, 116px); }
+    .rule-note { margin-top: 4px; font-size: 0.8125rem; line-height: 1.4; }
+  }
 </style>
 </head>
 <body>
@@ -315,6 +369,24 @@
       <span class="unit" id="to-unit"></span>
     </output>
     <p class="rule-note"><span id="note"></span> <a id="credit" href="https://www.exchangerate-api.com" hidden>Rates By Exchange Rate API</a></p>
+  </div>
+
+  <div class="keypad" id="keypad" role="group" aria-label="数字キー">
+    <button class="key" type="button" data-key="7">7</button>
+    <button class="key" type="button" data-key="8">8</button>
+    <button class="key" type="button" data-key="9">9</button>
+    <button class="key key-action key-back" type="button" data-key="back" aria-label="1文字消す">⌫</button>
+    <button class="key" type="button" data-key="4">4</button>
+    <button class="key" type="button" data-key="5">5</button>
+    <button class="key" type="button" data-key="6">6</button>
+    <button class="key" type="button" data-key="1" style="grid-row: 3">1</button>
+    <button class="key" type="button" data-key="2" style="grid-row: 3">2</button>
+    <button class="key" type="button" data-key="3" style="grid-row: 3">3</button>
+    <button class="key key-action" type="button" data-key="clear" style="grid-row: 3" aria-label="すべて消す">C</button>
+    <button class="key" type="button" data-key="0">0</button>
+    <button class="key" type="button" data-key="000">000</button>
+    <button class="key" type="button" data-key=".">.</button>
+    <button class="key" type="button" data-key="sign" id="sign-key" aria-label="プラスとマイナスを切り替える">±</button>
   </div>
 </main>
 
@@ -373,6 +445,7 @@
   const fromFaceEl = document.getElementById("from-face");
   const toFaceEl = document.getElementById("to-face");
   const creditEl = document.getElementById("credit");
+  const signKeyEl = document.getElementById("sign-key");
   const valueEl = document.getElementById("value");
   const mirrorEl = document.getElementById("mirror");
   const inputLineEl = document.getElementById("input-line");
@@ -612,8 +685,7 @@
     fromFaceEl.textContent = from.label;
     toFaceEl.textContent = UNITS[toEl.value].label;
     creditEl.hidden = !isMoney;
-    // iPhone のテンキーにはマイナスがないため、負の値を入れる温度だけ通常キーボードにする
-    valueEl.inputMode = (from.min ?? 0) < 0 ? "text" : "decimal";
+    signKeyEl.disabled = (from.min ?? 0) >= 0; // 負の値を入れられるのは温度だけ
     mirrorEl.textContent = valueEl.value || "0";
     inputLineEl.style.setProperty("--chars", (valueEl.value.length || 1) + from.label.length * 0.4);
 
@@ -628,7 +700,7 @@
     noteEl.textContent = conversion.note;
 
     const text = normalize(valueEl.value);
-    if (text === "") {
+    if (text === "" || text === "-") { // マイナスだけの間は入力途中として扱う
       tape.moveTo(conversion, 0);
       return showResult("—", "", "");
     }
@@ -694,6 +766,30 @@
   });
   document.getElementById("swap").addEventListener("click", () => applyPair(currentTo, currentFrom));
   valueEl.addEventListener("input", update);
+
+  // ---- テンキー ----
+  const MAX_LENGTH = 15;
+
+  function nextValue(value, key) {
+    if (key === "back") return value.slice(0, -1);
+    if (key === "clear") return "";
+    if (key === "sign") return value.startsWith("-") ? value.slice(1) : "-" + value;
+    if (value.length + key.length > MAX_LENGTH) return value;
+    if (key === ".") {
+      if (value.includes(".")) return value;
+      return (value === "" || value === "-" ? value + "0" : value) + ".";
+    }
+    if (/^-?0?$/.test(value) && key === "000") return value; // 先頭の 000 は意味がない
+    return /^-?0$/.test(value) ? value.slice(0, -1) + key : value + key;
+  }
+
+  if (window.matchMedia("(pointer: coarse)").matches) valueEl.readOnly = true; // 標準キーボードを出さない
+  document.getElementById("keypad").addEventListener("click", (event) => {
+    const key = event.target.closest("[data-key]")?.dataset.key;
+    if (!key) return;
+    valueEl.value = nextValue(valueEl.value, key);
+    update();
+  });
 
   // ---- 為替レートの取得 ----
   // 無料データの更新は1日1回。次回更新の時刻を過ぎるまでは保存済みのレートを使う
