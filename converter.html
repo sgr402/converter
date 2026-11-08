@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>単位変換</title>
+<link rel="manifest" href="converter.webmanifest">
+<link rel="apple-touch-icon" href="icons/converter-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="単位変換">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#bfd3c8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#123029">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+  :root {
+    color-scheme: light dark;
+    --enamel: #bfd3c8;
+    --ink: #12302a;
+    --muted: #3a564e;
+    --hairline: #7f9c91;
+    --needle: #d81e1e;
+    --error: #9c1218;
+    --plate-text: #e6f0ea;
+
+    --rule-x: clamp(120px, 24vw, 340px);
+    --display: clamp(84px, 12vw, 168px);
+    --latin: "Barlow Condensed", "Arial Narrow", "Zen Kaku Gothic New", sans-serif;
+    --japanese: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --enamel: #123029;
+      --ink: #e4efe8;
+      --muted: #a9c3b7;
+      --hairline: #4c6f64;
+      --needle: #ff5040;
+      --error: #ffb4a8;
+      --plate-text: #123029;
+    }
+  }
+  @media (max-width: 720px) {
+    :root {
+      --rule-x: 16px;
+      --display: 84px;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--enamel);
+    color: var(--ink);
+    font-family: var(--japanese);
+    font-weight: 500;
+    line-height: 1.6;
+  }
+
+  .needle {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--rule-x);
+    width: 2px;
+    background: var(--needle);
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  main {
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
+  }
+  .upper, .lower {
+    min-width: 0;
+    padding-left: calc(var(--rule-x) + 20px);
+    padding-right: 16px;
+  }
+  .upper { align-self: end; padding-top: 32px; padding-bottom: 10px; }
+  .lower { align-self: start; padding-top: 14px; padding-bottom: 32px; }
+
+  h1 {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    width: calc(var(--rule-x) - 24px);
+    margin: 0;
+    display: flex;
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.3em;
+    writing-mode: vertical-rl;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .plate {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 28px;
+    color: var(--plate-text);
+  }
+  .plate::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 18px;
+    width: 8px;
+    height: 8px;
+    margin-top: -6px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 48px;
+    padding: 0 48px 0 16px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--ink);
+    color: var(--plate-text);
+    font-family: var(--latin);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+  select option, select optgroup {
+    background: var(--ink);
+    color: var(--plate-text);
+    font-family: var(--japanese);
+    font-size: 1rem;
+  }
+  select:focus-visible {
+    outline: 3px solid var(--needle);
+    outline-offset: 2px;
+  }
+
+  .hint {
+    display: block;
+    color: var(--muted);
+    font-size: 0.9375rem;
+  }
+
+  .number {
+    --fit: calc((100vw - var(--rule-x) - 36px) / ((var(--chars, 3) + 1) * 0.46));
+    display: flex;
+    align-items: baseline;
+    gap: 0.1em;
+    font-family: var(--latin);
+    font-size: max(32px, min(var(--display), var(--fit)));
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+  }
+  .unit {
+    flex: none;
+    font-size: 0.4em;
+    font-weight: 500;
+  }
+
+  .sizer {
+    display: inline-grid;
+    grid-template-columns: minmax(0, auto);
+    min-width: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 0 var(--hairline);
+  }
+  .sizer:focus-within { box-shadow: 0 4px 0 var(--ink); }
+  .sizer:has(input[aria-invalid="true"]) { box-shadow: 0 4px 0 var(--error); }
+  .sizer > * {
+    grid-area: 1 / 1;
+    min-width: 0;
+    font: inherit;
+    font-variant-numeric: inherit;
+    line-height: inherit;
+  }
+  .sizer span {
+    visibility: hidden;
+    white-space: pre;
+    padding-right: 0.06em;
+  }
+  .sizer input {
+    width: 0;
+    min-width: 100%;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    color: inherit;
+    caret-color: var(--needle);
+  }
+  input::placeholder { color: var(--hairline); opacity: 1; }
+
+  .error {
+    min-height: 1.6em;
+    margin: 8px 0 0;
+    color: var(--error);
+    font-size: 0.9375rem;
+  }
+
+  .tape {
+    display: block;
+    width: 100%;
+    height: 136px;
+  }
+
+  output { overflow-wrap: anywhere; }
+  output.empty #result { color: var(--hairline); font-weight: 500; }
+  .rule-note {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 0.9375rem;
+    max-width: 60ch;
+  }
+
+  @media (max-width: 720px) {
+    h1 {
+      position: static;
+      display: block;
+      width: auto;
+      margin-bottom: 20px;
+      font-size: 1.25rem;
+      letter-spacing: 0.2em;
+      writing-mode: horizontal-tb;
+    }
+    .plate { margin-bottom: 20px; }
+    .tape { height: 116px; }
+  }
+</style>
+</head>
+<body>
+<div class="needle" id="needle" aria-hidden="true"></div>
+
+<main>
+  <div class="upper">
+    <h1>単位変換</h1>
+
+    <div class="plate">
+      <label class="visually-hidden" for="type">変換タイプ</label>
+      <select id="type">
+        <optgroup label="重さ">
+          <option value="kg-lb">kg → lb</option>
+          <option value="lb-kg">lb → kg</option>
+        </optgroup>
+        <optgroup label="長さ">
+          <option value="cm-inch">cm → inch</option>
+          <option value="inch-cm">inch → cm</option>
+        </optgroup>
+        <optgroup label="温度">
+          <option value="c-f">℃ → ℉</option>
+          <option value="f-c">℉ → ℃</option>
+        </optgroup>
+      </select>
+    </div>
+
+    <label class="hint" for="value">数値を入力</label>
+    <div class="number" id="input-line">
+      <div class="sizer">
+        <span id="mirror" aria-hidden="true">0</span>
+        <input id="value" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="0" aria-describedby="error" autofocus>
+      </div>
+      <span class="unit" id="from-unit"></span>
+    </div>
+    <p class="error" id="error" role="alert"></p>
+  </div>
+
+  <canvas class="tape" id="tape" aria-hidden="true"></canvas>
+
+  <div class="lower">
+    <output class="number" id="result-line" for="type value" aria-label="変換結果">
+      <span id="result">—</span>
+      <span class="unit" id="to-unit"></span>
+    </output>
+    <p class="rule-note" id="note"></p>
+  </div>
+</main>
+
+<script>
+  const KG_PER_LB = 0.45359237; // 国際ポンドの定義値
+  const CM_PER_INCH = 2.54;     // 国際インチの定義値
+
+  const LB_RULE = "1 lb = 0.45359237 kg";
+  const INCH_RULE = "1 inch = 2.54 cm";
+
+  const CONVERSIONS = {
+    "kg-lb":   { from: "kg",   to: "lb",   min: 0,       note: LB_RULE,   convert: (x) => x / KG_PER_LB },
+    "lb-kg":   { from: "lb",   to: "kg",   min: 0,       note: LB_RULE,   convert: (x) => x * KG_PER_LB },
+    "cm-inch": { from: "cm",   to: "inch", min: 0,       note: INCH_RULE, convert: (x) => x / CM_PER_INCH },
+    "inch-cm": { from: "inch", to: "cm",   min: 0,       note: INCH_RULE, convert: (x) => x * CM_PER_INCH },
+    "c-f":     { from: "℃",   to: "℉",   min: -273.15, note: "℉ = ℃ × 9 ÷ 5 + 32",   convert: (x) => x * 9 / 5 + 32 },
+    "f-c":     { from: "℉",   to: "℃",   min: -459.67, note: "℃ = (℉ − 32) × 5 ÷ 9", convert: (x) => (x - 32) * 5 / 9 },
+  };
+
+  const typeEl = document.getElementById("type");
+  const valueEl = document.getElementById("value");
+  const mirrorEl = document.getElementById("mirror");
+  const inputLineEl = document.getElementById("input-line");
+  const resultLineEl = document.getElementById("result-line");
+  const fromUnitEl = document.getElementById("from-unit");
+  const toUnitEl = document.getElementById("to-unit");
+  const resultEl = document.getElementById("result");
+  const errorEl = document.getElementById("error");
+  const noteEl = document.getElementById("note");
+
+  // ---- 巻尺の描画 ----
+  // 上辺が入力側の単位、下辺が結果側の単位。赤い基準線の位置が現在の値を指す。
+  const tape = (() => {
+    const canvas = document.getElementById("tape");
+    const needle = document.getElementById("needle");
+    const ctx = canvas.getContext("2d");
+    const YELLOW = "#f7c600";
+    const INK = "#15231f";
+    const MAJOR_PX = 110;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let width = 0, height = 0, originX = 0;
+    let conversion = null;
+    const target = { center: 0, logPx: Math.log(MAJOR_PX / 10) };
+    const state = { ...target };
+    let frame = 0, lastTime = 0, started = false;
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      width = rect.width;
+      height = rect.height;
+      originX = needle.getBoundingClientRect().left + 1;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function labelFor(v, step) {
+      if (Math.abs(v) < step / 2) return "0";
+      if (Math.abs(v) >= 1e9) return v.toExponential(2);
+      const digits = Math.max(0, Math.ceil(-Math.log10(step)));
+      return v.toLocaleString("ja-JP", { maximumFractionDigits: digits });
+    }
+
+    // 主目盛りの間隔を 1・2・5 × 10^n から選ぶ
+    function chooseStep(pxPerUnit, minPx) {
+      const raw = minPx / pxPerUnit;
+      const pow = 10 ** Math.floor(Math.log10(raw));
+      for (const [m, divisions] of [[1, 10], [2, 4], [5, 5]]) {
+        if (m * pow >= raw) return { step: m * pow, divisions };
+      }
+      return { step: 10 * pow, divisions: 10 };
+    }
+
+    function drawScale(center, pxPerUnit, tapeLeft, isTop, unit) {
+      const fontSize = height < 130 ? 20 : 24;
+      ctx.font = `600 ${fontSize}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+      ctx.fillStyle = INK;
+      ctx.textBaseline = isTop ? "top" : "bottom";
+
+      const sample = ctx.measureText(labelFor(center, 72 / pxPerUnit)).width;
+      const { step, divisions } = chooseStep(pxPerUnit, Math.max(72, sample + 28));
+      const minor = step / divisions;
+      const first = Math.ceil((center - originX / pxPerUnit) / minor);
+      const last = Math.floor((center + (width - originX) / pxPerUnit) / minor);
+      if (last - first > 2000) return;
+
+      const tagWidth = ctx.measureText(unit).width + 24;
+      const labelY = isTop ? 18 : height - 18;
+
+      for (let i = first; i <= last; i++) {
+        const x = originX + (i * minor - center) * pxPerUnit;
+        if (x < tapeLeft) continue;
+        const isMajor = i % divisions === 0;
+        const isHalf = !isMajor && divisions === 10 && i % 5 === 0;
+        const length = isMajor ? 42 : isHalf ? 16 : 10;
+        ctx.fillRect(x - 0.75, isTop ? 0 : height - length, isMajor ? 2 : 1.5, length);
+        if (isMajor) {
+          const label = labelFor(i * minor, step);
+          if (x + 6 + ctx.measureText(label).width < width - tagWidth) {
+            ctx.fillText(label, x + 6, labelY);
+          }
+        }
+      }
+
+      // 目盛りの単位を右端に固定表示
+      ctx.fillStyle = YELLOW;
+      ctx.fillRect(width - tagWidth, isTop ? 0 : height - fontSize - 26, tagWidth, fontSize + 26);
+      ctx.fillStyle = INK;
+      ctx.fillText(unit, width - tagWidth + 10, labelY);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      if (!conversion) return;
+      const px = Math.exp(state.logPx);
+      const tapeLeft = originX + (conversion.min - state.center) * px;
+
+      ctx.fillStyle = YELLOW;
+      ctx.fillRect(Math.max(0, tapeLeft), 0, width, height);
+      if (tapeLeft >= 0) {
+        ctx.fillStyle = INK;
+        ctx.fillRect(tapeLeft - 6, 0, 6, height);
+      }
+
+      const b = conversion.convert(0);
+      const a = conversion.convert(1) - b;
+      drawScale(state.center, px, tapeLeft, true, conversion.from);
+      drawScale(a * state.center + b, px / a, tapeLeft, false, conversion.to);
+    }
+
+    function step(now) {
+      const k = 1 - Math.exp(-Math.min(now - lastTime, 50) / 110);
+      lastTime = now;
+      state.center += (target.center - state.center) * k;
+      state.logPx += (target.logPx - state.logPx) * k;
+      const px = Math.exp(state.logPx);
+      const settled = Math.abs(target.center - state.center) * px < 0.3
+        && Math.abs(target.logPx - state.logPx) < 0.002;
+      if (settled) {
+        state.center = target.center;
+        state.logPx = target.logPx;
+        frame = 0;
+      } else {
+        frame = requestAnimationFrame(step);
+      }
+      draw();
+    }
+
+    function animate() {
+      if (reduceMotion) {
+        Object.assign(state, target);
+        draw();
+      } else if (!frame) {
+        lastTime = performance.now();
+        frame = requestAnimationFrame(step);
+      }
+    }
+
+    function moveTo(nextConversion, x) {
+      conversion = nextConversion;
+      target.center = x;
+      const magnitude = x === 0 ? 10 : 10 ** Math.floor(Math.log10(Math.abs(x)));
+      target.logPx = Math.log(MAJOR_PX / magnitude);
+      if (!started) {
+        started = true;
+        // 読み込み時に一度だけ、テープを右から引き出す
+        state.center = target.center - (width - originX) / Math.exp(target.logPx);
+        state.logPx = target.logPx;
+      }
+      animate();
+    }
+
+    resize();
+    window.addEventListener("resize", () => { resize(); draw(); });
+    if (document.fonts) document.fonts.ready.then(draw);
+
+    // 入力エラー中は位置を保つ。切り替え先の目盛りの範囲外なら下限へ戻す
+    function hold(nextConversion) {
+      conversion = nextConversion;
+      target.center = Math.max(target.center, nextConversion.min);
+      animate();
+    }
+
+    return { moveTo, hold };
+  })();
+
+  // ---- 変換 ----
+  // 全角の数字・記号でも入力できるよう半角にそろえる
+  function normalize(text) {
+    return text
+      .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/[．。]/g, ".")
+      .replace(/[－ー−]/g, "-")
+      .replace(/＋/g, "+")
+      .replace(/[,，\s　]/g, "");
+  }
+
+  function format(x) {
+    const options = Math.abs(x) >= 1
+      ? { maximumFractionDigits: 4 }
+      : { maximumSignificantDigits: 6 };
+    return x.toLocaleString("ja-JP", options);
+  }
+
+  function showResult(text, unit, error) {
+    resultEl.textContent = text;
+    toUnitEl.textContent = unit;
+    errorEl.textContent = error;
+    valueEl.setAttribute("aria-invalid", error ? "true" : "false");
+    resultLineEl.style.setProperty("--chars", text.length + unit.length * 0.4);
+    resultLineEl.classList.toggle("empty", unit === "");
+  }
+
+  function update() {
+    const conversion = CONVERSIONS[typeEl.value];
+    // iPhone のテンキーにはマイナスがないため、負の値を入れる温度だけ通常キーボードにする
+    valueEl.inputMode = conversion.min < 0 ? "text" : "decimal";
+    fromUnitEl.textContent = conversion.from;
+    noteEl.textContent = conversion.note;
+    mirrorEl.textContent = valueEl.value || "0";
+    inputLineEl.style.setProperty("--chars", (valueEl.value.length || 1) + conversion.from.length * 0.4);
+
+    const text = normalize(valueEl.value);
+    if (text === "") {
+      tape.moveTo(conversion, 0);
+      return showResult("—", "", "");
+    }
+
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) {
+      tape.hold(conversion);
+      return showResult("—", "", "数値を入力してください");
+    }
+
+    const x = Number(text);
+    if (!Number.isFinite(x)) {
+      tape.hold(conversion);
+      return showResult("—", "", "数値が大きすぎます");
+    }
+    if (x < conversion.min) {
+      const message = conversion.min === 0
+        ? "0以上の数値を入力してください"
+        : `絶対零度（${conversion.min}${conversion.from}）以上の数値を入力してください`;
+      tape.hold(conversion);
+      return showResult("—", "", message);
+    }
+
+    tape.moveTo(conversion, x);
+    showResult(format(conversion.convert(x)), conversion.to, "");
+  }
+
+  typeEl.addEventListener("change", update);
+  valueEl.addEventListener("input", update);
+  update();
+</script>
+</body>
+</html>
